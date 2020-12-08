@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Ethereum Miner Visualization </title>
+  <link rel="stylesheet" href="https://unpkg.com/bulma@0.9.0/css/bulma.min.css" />
+  <link href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet"
+    integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+  <link rel="stylesheet" href="../css/bulma-divider.min.css">
+  <script src="https://ethminerviz.s3-us-west-2.amazonaws.com/c3.min.js"></script>
+  <link href="https://ethminerviz.s3-us-west-2.amazonaws.com/c3.css" rel="stylesheet">
+  <!-- Required meta tags -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.805.0.min.js"></script>
+
+  <!-- Bootstrap CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+
+  <style>
+    nav.navbar {
+      height: 3rem !important;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, .1), 0 1px 2px 0 rgba(0, 0, 0, .06) !important;
+    }
+  </style>
+  <script src="https://unpkg.com/d3-force-bounce@0.5.7/dist/d3-force-bounce.min.js"></script>
+  <script src="https://unpkg.com/d3-force-surface@0.5.7/dist/d3-force-surface.min.js"></script>
+
+</head>
+
+<body>
+	<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+  <!-- START NAV -->
+  <nav class="navbar">
+	  <a class="navbar-item is-active is-size-5 has-text-weight-semibold" href="../">Eth-miner-viz</a>
+  </nav>
+  <!-- END NAV -->
+
+  <!-- Intro -->
+  <div class="fullpanel">
+	  <div class="left_panel">
+		  <button id="start" type="button" class="btn btn-sm btn-secondary" onclick="start()">Start</button>
+		  <button id="pause" type="button" class="btn btn-sm btn-secondary" onclick="pause()">Pause</button>
+		  <div class="btn-group">
+		    <button type="button" class="btn btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+		      Sample Rate
+		    </button>
+		    <div class="dropdown-menu">
+			  <a class="dropdown-item" href="#" onclick="sr(1000)">0.1%</a>
+		      <a class="dropdown-item" href="#" onclick="sr(100)">1% (default)</a>
+			  <a class="dropdown-item" href="#" onclick="sr(20)">5%</a>
+		      <a class="dropdown-item" href="#" onclick="sr(10)">10%</a>
+		      <a class="dropdown-item" href="#" onclick="sr(1)">100%</a>
+		      <!-- <div class="dropdown-divider"></div>
+		      <a class="dropdown-item" href="#">Separated link</a> -->
+		    </div>
+		  </div>
+		  <div class="chart"></div>
+		  <div class="linechart"></div>
+	  </div>
+	  <div class="mid_panel">
+		  <div class="blockspanel"></div>
+	  </div>
+	  <div class="right_panel">
+		  <div class="poolspanel"></div>
+	  </div>
+  </div>
+
+  <style>
+	  .time {
+	    fill: none;
+	    stroke: steelblue;
+	    stroke-width: 1.5px;
+	  }
+
+	  .axis--x path {
+	  	display: none;
+	  }
+
+	  .fullpanel {
+		  display: flex;
+		  flex-direction: row;
+		  width: 100%;
+	  }
+
+	  .blockspanel {
+		overflow-y:auto;
+		border:1px solid grey;
+	  }
+
+	  .block {
+	  	cursor: pointer;
+	  }
+
+	  .blocklabel {
+	    cursor: pointer;
+	  }
+
+	  .transaction {
+	    cursor: pointer;
+	  }
+
+	  .canonicalline{
+	     stroke-dasharray: 5,5;
+	  }
+
+	  .pool_xaxis line {
+	    stroke: grey;
+		opacity: 0.8;
+	  }
+
+  </style>
+
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <script>
+
+
+	  async function subscribe(stream, processor) {
+	  	var decoder = new TextDecoder("utf-8");
+	  	AWS.config.credentials = new AWS.Credentials('AKIA2I7XCX2MRULEQ6GD', '44t7UxrhS/cCLykNZffCZ3YlH2WBKBSSuQ+oHNrK', sessionToken = null);
+	  	AWS.config.update({region:'us-west-2'});
+
+
+	  	var kinesis = new AWS.Kinesis({
+	  		apiVersion: '2013-12-02',
+	  		region: 'us-west-2'
+	  	});
+	  	var params = {
+	  		ShardId: 'shardId-000000000000', /* required */
+	  		ShardIteratorType: "LATEST", /* required */
+	  		StreamName: stream, /* required */
+	  	};
+	  	kinesis.getShardIterator(params, function(err, data) {
+	  		if (err) {
+	  			console.log(err, err.stack);
+	  			return;
+	  		}
+	  		var params = {
+	  			ShardIterator: data.ShardIterator
+	  		};
+
+	  		var next_shard_iter = data.ShardIterator;
+
+	  		window.setInterval(function(){
+	  			kinesis.getRecords({ShardIterator: next_shard_iter}, function(err, data) {
+	  				if (err) {
+	  					console.log(err, err.stack);
+	  					return;
+	  				}
+	  				next_shard_iter = data.NextShardIterator;
+	  				for (var record of data.Records) {
+	  					data = record.Data;
+	  					decoded = JSON.parse(decoder.decode(data));
+	  					processor(decoded);
+	  				}
+	  			});
+	  		}, 500);
+	  	});
+	  }
+
+
+
+      var margin = 200,
+      width = 900 - margin,
+      height = 800 - margin;
+
+	  var line_x = d3.scaleTime().range([80, 580]),
+	      line_y = d3.scaleLog().range([0, 150]);
+
+	  var paused = false;
+
+	  const pause = () => {console.log('pause'); paused = true; console.log(paused)};
+	  const start = () => {paused = false;};
+
+      var SAMPLE_RATE = 50;
+
+	  d3.select(".chart")
+		  .append("svg")
+		  .attr("width", width)
+		  .attr("height", height)
+
+	  var svg = d3.select("svg")
+
+	  var g = svg.append("g").attr("transform", "translate(" + 50 + "," + 50 + ")");
+
+  	var line = d3.line()
+  	    .curve(d3.curveBasis)
+  	    .x(function(d) { return line_x(new Date(d[0] + 1589673600000)); })
+  	    .y(function(d) { return line_y(d[1]); });
+
+	const x_axis = g.append("g")
+		.attr("transform", `translate(0,${30 + 500})`)
+
+	x_axis.append("text")
+		  .attr("x", 580)
+	      .attr("y", 5)
+	      .attr("dy", "1em")
+	      .attr("fill", "#000")
+	      .text("Gas Price (Wei)");
+
+	const y_axis = g.append("g")
+		.attr("transform", `translate(0,0)`)
+
+	y_axis.append("text")
+	      .attr("transform", "rotate(-90)")
+		  .attr("x", -30)
+	      .attr("y", 10)
+	      .attr("dy", "1em")
+	      .attr("fill", "#000")
+	      .text("Gas Limit (wei)");
+
+	var formatTime = d3.timeFormat("%I:%M:%S");
+
+	const timeseries_svg = d3.select(".linechart")
+		.append("svg")
+		.attr("width", 700)
+		.attr("height", 250)
+
+	const displayline = timeseries_svg
+			.append('line')
+			.attr('class', 'ts')
+			.attr('visibility', 'hidden');
+
+	const cal_5sec_avg = 500;
+
+	// const avgline = timeseries_svg
+	// 		.append('line')
+	// 		.attr('class', 'avg')
+	// 		.attr('x1', 80)
+	// 		.attr('y1', line_y(cal_5sec_avg))
+	// 		.attr('x2', 580)
+	// 		.attr('y2', line_y(cal_5sec_avg));
+
+	var box_range_default = 60;
+	var box_range = box_range_default;
+	var box_start = 0;
+	var box_end = 0;
+	var box_enforced = false;
+	var box_last_x = 0;
+
+	const displaybox = timeseries_svg
+			.append('rect')
+			.attr('class', 'box')
+			.attr('visibility', 'hidden')
+			.attr("width", box_range * 2)
+			.attr("height", 150)
+			.attr("fill", '#83cefc')
+			.attr("opacity", 0.5)
+			.attr('pointer-events', 'all');
+
+	const timeseries_mouse = timeseries_svg
+		.append("rect")
+		.attr("width", 600)
+		.attr("height", 250)
+		.attr("fill", 'none')
+		.attr('pointer-events', 'all');
+
+	const timeseries = timeseries_svg.append("path");
+
+	const line_xaxis = timeseries_svg.append("g")
+	  .attr("class", "axis axis--x")
+	  .attr("id", 'x_axis')
+	  .attr("transform", "translate(0,150)")
+	  .call(d3.axisBottom(line_x).ticks(10).tickFormat(formatTime));
+
+	line_xaxis.append("text")
+		  .attr("x", 630)
+	      .attr("y", 5)
+	      .attr("dy", "1em")
+	      .attr("fill", "#000")
+	      .text("Time");
+
+	const line_yaxis = timeseries_svg.append("g")
+	  .attr("class", "axis axis--y")
+	  .attr("id", 'y_axis')
+	  .attr("transform", "translate(50,0)")
+	  .call(d3.axisLeft(line_y).ticks(5));
+
+    line_yaxis.append("text")
+  		  .attr("transform", "rotate(-90)")
+		  .attr("x", 0)
+	      .attr("y", 10)
+	      .attr("dy", "1em")
+	      .attr("fill", "#000")
+	      .text("# of Transactions");
+
+	var blocks = [];
+
+	var sr;
+
+  	d3.csv("https://ethminerviz.s3-us-west-2.amazonaws.com/cs560-tx.csv", function(d) {
+  	  	return d;
+  	}).then(function(rawtx) {
+
+		const fulldata = d3.map(rawtx, d => { return {
+			HASH: d.HASH,
+			TS: parseInt(d.TS),
+			GASLIMIT: parseInt(d.GASLIMIT),
+			GASPRICE: parseInt(d.GASPRICE),
+			ZEROCLOCK: d.TS - 1589673600000,
+			CONFIRMED: false
+		};});
+
+		var data;
+		sr = r => {data = fulldata.filter((_, i) => i % r == 0); data.sort((a, b) => a.ZEROCLOCK - b.ZEROCLOCK); console.log(data)};
+
+		sr(100);
+
+		var timestamps = d3.map(fulldata, d => d.ZEROCLOCK);
+		var historical_bins = d3.rollups(timestamps, v => v.length, d => Math.ceil(d / 5000) * 5000);
+		historical_bins.sort((a, b) => a[0] - b[0]);
+
+		var tx_list = [];
+
+		var max = 0;
+
+		const prefix = (x) => {
+			if (x > 1000000000) {
+				return Math.round(x / 1000000000 * 10) / 10 + "B";
+			}
+
+			if (x > 1000000) {
+				return Math.round(x / 1000000 * 10) / 10 + "M";
+			}
+
+			if (x > 1000) {
+				return Math.round(x / 1000 * 10) / 10 + "K";
+			}
+		}
+		const size_display = g.append('text').attr('x', 0).attr('y', 0).text('TX Pool Size: ');
+		const time_display = g.append('text').attr('x', 130).attr('y', 0).text('Time: ');
+		var line_display = false;
+
+		const drawline = (elem) => {
+			line_display = true;
+			var attrs = elem.srcElement.attributes;
+			let ts = attrs['data-ts'].value;
+			var x = line_x(new Date(parseInt(ts)));
+			displayline
+				.attr('x1', x)
+				.attr('x2', x)
+				.attr('y1', 0)
+				.attr('y2', 150)
+				.attr('data-ts', ts)
+				.style("stroke", '#000000')
+				.attr('visibility', 'visible');
+		}
+
+		const removeline = (elem) => {
+			line_display = false;
+			displayline.attr('visibility', 'hidden');
+		}
+
+		const update_line = () => {
+			const history = historical_bins.slice(0, history_i);
+			line_x.domain(d3.extent(history, d => new Date(d[0] + 1589673600000)));
+			line_y.domain(d3.extent(history, d => d[1]));
+
+			// avgline
+			// 	.attr('y1', line_y(cal_5sec_avg))
+			// 	.attr('y2', line_y(cal_5sec_avg));
+			//
+			// console.log([0, d3.extent(history, d => d[1])[1]]);
+			// console.log(history[0][1]);
+			timeseries.data(history)
+				.transition()
+				.duration(80)
+				.attr("class", "time")
+				.attr("d", d => line(history))
+				.style("stroke", '#000000')
+
+			line_xaxis.transition()
+				.duration(80)
+				.call(d3.axisBottom(line_x).ticks(5).tickFormat(formatTime));
+
+			line_yaxis.transition()
+				.duration(80)
+				.call(d3.axisLeft(line_y).ticks(4));
+
+			if (line_display) {
+				var ts = new Date(parseInt(displayline.attr('data-ts')));
+				displayline
+					.transition()
+					.duration(70)
+					.attr('class', 'ts')
+					.attr('x1', line_x(ts))
+					.attr('x2', line_x(ts))
+					.attr('y1', 0)
+					.attr('y2', 150)
+					.attr('data-ts', displayline.attr('data-ts'))
+					.style("stroke", '#000000')
+			}
+
+			if (box_enforced) {
+				var x = box_last_x;
+				box_start = line_x.invert(x - box_range);
+				box_end = line_x.invert(x + box_range);
+				box_last_x = x;
+			}
+		}
+
+		const displayrange = (event, d) => {
+			var x = event.pageX;
+			displayline
+				.attr('x1', x)
+				.attr('x2', x)
+				.attr('y1', 0)
+				.attr('y2', 150)
+				.attr('data-ts', displayline.attr('data-ts'))
+				.style("stroke", '#000000')
+				.attr('visibility', 'visible');
+
+			var t = line_x.invert(x);
+			displaybox
+				.attr('visibility', 'visible')
+				.attr('x', x - box_range)
+				.attr('width', 2 * box_range)
+
+			box_enforced = true;
+			box_start = line_x.invert(x - box_range);
+			box_end = line_x.invert(x + box_range);
+			box_last_x = x;
+
+
+		}
+
+		const removerange = (event, d) => {
+
+			if (event.pageX < 600 && event.pageX > 80 && box_last_x > 80 && box_last_x < 600) {
+				return;
+			}
+			displayline
+				.attr('visibility', 'hidden');
+			displaybox
+				.attr('visibility', 'hidden');
+
+			box_enforced = false;
+		}
+
+		timeseries_mouse
+			.on("mouseover", e => {displayrange(e); display(zeroclock);})
+			.on("mousemove", e => {displayrange(e); display(zeroclock);})
+			.on("mouseout", e => {removerange(e); display(zeroclock);});
+
+		const update_confirm = (hashes) => {
+			for (var hash of hashes) {
+				var tx = d3.select(`circle[id='${hash}']`);
+				tx
+					.transition()
+					.duration(3000)
+					.delay(1000)
+					.attr('fill', 'green')
+					.attr('stroke-width', 10)
+			}
+		}
+
+
+		base = data[0].TS;
+		const start_time = Date.now();
+
+		console.log(`clock set to ${base} - ${new Date(base)}`);
+		update_line();
+
+		const xAxis = (g, x) => g
+		  .attr("transform", `translate(0,200)`)
+		  .call(d3.axisBottom(x).ticks(10).tickFormat(formatTime))
+
+		function zoomed(event) {
+			var delta_y = event.transform.y;
+			if (box_range <= 0 || box_range + delta_y <= 0) {
+				return;
+			}
+			box_range = box_range_default + delta_y;
+			displayrange(event.sourceEvent, '');
+			update_line();
+			display(zeroclock);
+		}
+
+		const zoom = d3.zoom()
+			.scaleExtent([-5, 5])
+			.extent([[margin.left, -120], [width - margin.right, 120]])
+			.translateExtent([[margin.left, -Infinity], [width - margin.right, Infinity]])
+			.on("zoom", zoomed);
+
+		timeseries_svg.call(zoom);
+
+		const display = (zeroclock) => {
+			const snapshot = pool();
+			xc = d3.map(snapshot, r => r.GASPRICE);
+			yc = d3.map(snapshot, r => r.GASLIMIT);
+
+			var xScale = d3.scalePow()
+				.exponent(0.05)
+				.domain([d3.min(xc), d3.max(xc)])
+				.range([30, 530]);
+
+			var yScale = d3.scalePow()
+				.exponent(0.00001)
+				.domain([d3.min(yc), d3.max(yc)])
+				.range([530, 30]);
+
+			var circle = g.selectAll("circle")
+						.data(snapshot);
+			circle
+				.enter()
+				.append('circle')
+				.attr('cx', r => xScale(r.GASPRICE))
+				.attr('cy', r => yScale(r.GASLIMIT))
+				.attr('r', r => 2)
+				.attr('class', 'transaction')
+				.attr('stroke-width', 10)
+				.attr('stroke', 'red')
+				.attr('fill', '#1f77b4')
+				.attr('id', r => `h${r.HASH}`)
+				.attr('data-ts', r => r.TS)
+				.style('opacity', 0.7)
+				.attr("visibility", 'hidden');
+
+			circle
+				.on("click", (e, r) => {window.open(`https://etherscan.io/tx/${r.HASH}`, '_blank');})
+				.on("mouseover", drawline)
+				.on("mouseout", removeline)
+				.append("svg:title")
+				.text(d => `Gas Price: ${prefix(d.GASPRICE)}\nGas Limit: ${d.GASLIMIT}\nHash: ${d.HASH}\nReceived At: ${new Date(d.TS)}`);
+
+			circle
+				.transition()
+				.duration(1500)
+				.attr("cx", r => r.CONFIRMED ? 660 : xScale(r.GASPRICE))
+				.attr("cy", r => r.CONFIRMED ? 390 : yScale(r.GASLIMIT))
+				.attr("fill", r => r.CONFIRMED ? 'green' : '#1f77b4')
+				.attr('r', r => 7)
+				.attr('stroke-width', 1.5)
+				.attr('stroke', '#2a2a2a')
+				.attr('visibility', r => {
+					var t = new Date(r.TS);
+					if (!box_enforced || (t < box_end && t > box_start)) {
+						return 'visible';
+					}
+					return 'hidden';
+				})
+
+			x_axis.transition()
+				.duration(80)
+				.call(d3.axisBottom(xScale).tickFormat(x => prefix(x)).ticks(3));
+			y_axis.transition()
+				.duration(80)
+				.call(d3.axisLeft(yScale).tickFormat(x => prefix(x)).ticks(7));
+
+
+			size_display.text(`TX Pool Size: ${size}`)
+		}
+
+		const blocks_svg = d3.select(".blockspanel")
+			.append("svg")
+			.attr("width", 400)
+			.attr('height', 750)
+			.append("g")
+			.attr("overflow", "auto");
+
+		blocks_svg.append('text').attr('x', 60).attr('y', 80).text('Received Blocks: ');
+
+		var max_height = 0;
+
+		var h2b = {};
+
+		var p2b = {};
+
+		const block_width = 70;
+		const block_height = 40;
+		const block_horizontal_margin = 10;
+		const block_vertical_margin = 20;
+		const blockx = block => {return h2b[block.number].map(d => d.hash).indexOf(block.hash) * (block_width + block_horizontal_margin) + 80;};
+		const blocky = block => (max_height - block.number) * (block_height + block_vertical_margin) + 120;
+
+		const pool_svg = d3.select(".poolspanel")
+			.append("svg")
+			.attr("width", 400)
+			.attr('height', 700)
+
+		pool_svg.append('text').attr('x', 30).attr('y', 40).text('Top Mining Pools (blocks mined): ');
+
+		var pool_x = d3.scaleLinear()
+			.domain([0, 1])
+			.range([0, 200]);
+
+		var pool_xaxis = d3.axisTop(pool_x).tickSize(100).tickFormat(d3.format("d")).ticks(Math.min(d3.max(Object.values(p2b)), 5));
+
+		const pool_xaxis_svg = pool_svg.append("g")
+			  .attr("class", "pool_xaxis")
+			  .attr("id", 'pool_x_axis')
+			  .attr("transform", "translate(80,160)")
+			  .call(pool_xaxis);
+
+
+		const canonical_line = blocks_svg.append('line')
+			.attr('id', 'canonicalline')
+			.attr('stroke', 'green')
+			.attr('stroke-width', 3)
+			.attr('x1', 0)
+			.attr('y1', 6 * (block_height + block_vertical_margin) + 110)
+			.attr('x2', 300)
+			.attr('y2', 6 * (block_height + block_vertical_margin) + 110)
+
+		const canonical_line_text = blocks_svg.append('text')
+			.attr('x', 300)
+			.attr('y', 6 * (block_height + block_vertical_margin) + 112)
+			.text("canonical line")
+
+
+		var accent = d3.scaleOrdinal(d3.schemeSet3);
+
+		const seenpools = [];
+
+		const parent_or_default = (r, f, default_offset, parent_offset) => {
+			const parent = blocks_svg.select(`#h${r.parentHash}`);
+			if (parent.empty()) {
+				return f(r) + default_offset
+			}
+			return f(parent.data()[0]) + parent_offset;
+		}
+
+		function block_zoomed({transform}) {
+			blocks_svg.attr("transform", transform);
+		}
+
+		blocks_svg.call(d3.zoom()
+		      .extent([[0, 0], [400, 750]])
+		      .scaleExtent([-8, 8])
+		      .on("zoom", block_zoomed));
+
+
+		const click_block = (e, r) => {
+			const url = `http://3.216.117.30:5000/block/${r.HASH}`;
+
+			fetch(url)
+				.then(data => {return data.json()})
+				.then(res => {console.log(res)})
+		};
+
+		const blks = [];
+
+		const add_block = (block) => {
+
+			block.CONFIRMED = false;
+
+			// Update seen pools
+			if (!seenpools.includes(block.pool)){
+				seenpools.push(block.pool);
+				accent.domain(seenpools);
+			}
+			// UPDATE height to block mapping
+			if (!(block.number in h2b)) {
+				h2b[block.number] = [];
+			}
+			h2b[block.number].push(block)
+
+			console.log(h2b);
+
+			// UPDATE pool to block mapping
+			if (!(block.pool in p2b)) {
+				p2b[block.pool] = 0;
+			}
+			p2b[block.pool] = p2b[block.pool] + 1
+
+			// Initialize max height
+			if (max_height == 0) {
+				max_height = block.number;
+			}
+
+			max_height = Math.max(max_height, block.number)
+
+			blks.push(block);
+
+			var pools = Object.keys(p2b);
+
+			pools.sort((a, b) => p2b[b] - p2b[a]);
+
+			pool_x.domain([0, d3.max(Object.values(p2b))]);
+
+			pool_xaxis = d3.axisTop(pool_x).tickSize((pools.length - 2) * 30 + 70).tickFormat(d3.format("d")).ticks(Math.min(d3.max(Object.values(p2b)), 5));
+
+			pool_xaxis_svg.transition()
+				.duration(80)
+				.attr("transform", `translate(80,${(pools.length - 2) * 30 + 130})`)
+				.call(pool_xaxis);
+
+			pool_svg.selectAll('.bar')
+				.data(pools)
+				.enter()
+				.append('rect')
+				.attr('class', 'bar')
+				.attr("height", 20)
+				.attr("width", r => pool_x(p2b[r]))
+				.attr('fill', r => accent(r))
+				.attr('stroke', 'black')
+				.attr('id', r => `b${r}`)
+				.attr("x", 80)
+				.attr("y", r => pools.indexOf(r) * 30 + 70)
+
+			pool_svg.selectAll('.bar')
+				.transition()
+				.duration(300)
+				.attr("width", r => pool_x(p2b[r]))
+				.attr("y", r => pools.indexOf(r) * 30 + 70)
+				.attr('fill', r => accent(r))
+
+
+			pool_svg.selectAll('.barlabel')
+				.data(pools)
+				.enter()
+				.append('text')
+				.attr('class', 'barlabel')
+				.attr('stroke', 'none')
+				.attr('fill', 'black')
+				.attr('font-size', 12)
+				.attr("x", 10)
+				.text(r => r)
+
+			pool_svg.selectAll('.barlabel')
+				.transition()
+				.duration(300)
+				.attr("y", r => pools.indexOf(r) * 30 + 85)
+				.text(r => r)
+
+
+			blocks_svg.selectAll('.block')
+				.data(blks)
+				.enter()
+				.append('rect')
+				.attr('class', 'block')
+				.attr("width", block_width)
+				.attr("height", block_height)
+				.attr('fill', r => accent(r.pool))
+				.attr('stroke', 'black')
+				.attr('id', r => `h${r.hash}`)
+				.attr("x", r => blockx(r))
+				.on("click", (e, r) => {window.open(`https://etherscan.io/block/${r.number}`, '_blank');})
+
+
+			blocks_svg.selectAll('.block')
+				.transition()
+				.duration(300)
+				.attr("y", r => {
+					if (max_height - r.number == 6) {
+						// var confirmed_tx = data.filter(o => r.TXS.includes(o.hash))
+						for (var i = 0; i < Math.random() * Math.min(20, data_i); i++) {
+							data[Math.floor(Math.random() * data_i)].CONFIRMED = true;
+							size = size - 1;
+						}
+					}
+					return blocky(r)
+				})
+
+			blocks_svg.selectAll('.blocklabel')
+				.data(blks)
+				.enter()
+				.append('text')
+				.attr('class', 'blocklabel')
+				.attr('stroke', 'none')
+				.attr('fill', 'black')
+				.attr('font-size', 12)
+				.attr("x", r => blockx(r) + 8)
+				.text(r => r.hash.substring(0, 8))
+				.on("click", (e, r) => {window.open(`https://etherscan.io/block/${r.number}`, '_blank');})
+				.append("svg:title")
+				.text(d => `Hash: ${d.hash}\nMined By: ${d.pool}\nHeight: ${d.number}\nParent Hash: ${d.parentHash}\nReceived At: ${new Date(d.received_at)}`);
+
+			blocks_svg.selectAll('.blocklabel')
+				.transition()
+				.duration(300)
+				.attr("y", r => blocky(r) + 25)
+
+			blocks_svg.selectAll('.edge')
+				.data(blks)
+				.enter()
+				.append('line')
+				.attr('class', 'edge')
+				.attr('stroke', 'black')
+				.attr('stroke-width', 2)
+				.attr("x1", r => blockx(r) + block_width / 2)
+				.attr("y1", r => blocky(r) + block_height)
+				.attr("x2", r => parent_or_default(r, blockx, block_width / 2, block_width / 2))
+				.attr("y2", r => parent_or_default(r, blocky, block_height, 0));
+
+			blocks_svg.selectAll('.edge')
+				.transition()
+				.duration(300)
+				.attr("y1", r => blocky(r) + block_height)
+				.attr("y2", r => parent_or_default(r, blocky, block_height, 0));
+
+			blocks_svg.selectAll('.height_label')
+				.data(Object.keys(h2b))
+				.enter()
+				.append('text')
+				.attr('class', 'height_label')
+				.attr('stroke', 'black')
+				.attr('font-size', 12)
+				.attr("x", 20)
+				.text(r => r)
+
+			blocks_svg.selectAll('.height_label')
+				.transition()
+				.duration(300)
+				.attr("y", r => (max_height - r) * (block_height + block_vertical_margin) + 125 + block_height / 2)
+		};
+
+
+		var data_i = 0;
+		var history_i = 0;
+		var size = 0;
+		const pool = () => data.slice(0, data_i);
+		var max_ts = data[0].TS;
+		var max_height = 0;
+		var zeroclock;
+
+		subscribe('ethblocks', d => {console.log(d); add_block(d)});
+
+		const load = () => {
+			if (paused) {
+
+				return;
+			}
+			zeroclock = Date.now() - start_time;
+
+			time_display.text(`Time: ${new Date(1589673600000 + zeroclock).toLocaleString()}`)
+
+			while (zeroclock >= data[data_i].ZEROCLOCK) {
+				data_i = data_i + 1;
+				size = size + 1;
+			}
+			display(zeroclock);
+
+			while (zeroclock >= historical_bins[history_i][0]) {
+				history_i = history_i + 1;
+			}
+
+			update_line();
+		};
+
+		d3.interval(function(){
+		  load()
+		}, 1500);
+  	});
+  </script>
+  <!-- <footer class="footer">
+    <div class="content has-text-centered">
+      <p>
+        <strong>Bulma theme</strong>
+      </p>
+    </div>
+  </footer> -->
+
+</body>
+
+</html>
